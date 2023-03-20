@@ -1,0 +1,686 @@
+<html><title>MIDI to OSC Mapper</title>
+<style type="text/css">
+html, body{
+	background: black;
+	color: white;
+	font-family: Arial;
+	overflow-x: hidden;
+}
+h1, table{
+	text-align: center;
+}
+table{
+	width: 100%;
+	border-spacing: 4px 10px;
+}
+td{
+	padding: 5px;
+}
+tr{
+	background: #111;
+	transition: all .5s;
+}
+input, select, button{
+	background: #555;
+	border: 0;
+	color: white;
+	padding: 0px;
+	text-align: center;
+	font-size: 14px
+}
+button{
+	width: auto;
+}
+select{
+	width: auto;
+}
+p{
+	text-align: center;
+}
+i{
+	opacity: 0;
+}
+.sliderClass
+{
+	-webkit-appearance: slider-horizontal;
+}
+</style>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+
+<body onload="init()">
+<h1> MIDI to OSC Mapper </h1>
+
+<table id="midiControlsTable">
+<tbody>
+<tr>
+	<td>Index</td>
+	<td>Control Name</td>
+	<td>Chanel</td>
+	<td>Command</td>
+	<td>Opcode 1</td>
+	<td>Opcode 2</td>
+	<td>Map to OSC</td>
+	<td>Actions</td>
+</tr>
+</tbody></table>
+<p>
+	<button onclick="addMIDIItem('name',0,0,0,0,-1)">+ MIDI Control</button>
+</p>
+<hr>
+<table id="oscControlsTable">
+<tbody>
+<tr>
+	<td>Index</td>
+	<td>OSC Name</td>
+	<td>Values</td>
+	<td>Type</td>
+	<td>Actions</td>
+</tr>
+</tbody></table>
+<p>
+	<button onclick="addOSCItem('/name',1,'i')">+ OSC Controler</button>
+</p>
+<hr>
+<p>
+	<button onclick="saveConfig()">Save Config to Controller</button>
+	<button onclick="loadDefaults()">Reset to Default</button>
+</p>
+
+<script language="JavaScript">
+
+function sleep(ms)
+{
+	return new Promise( resolve => setTimeout(resolve, ms));
+}
+//OSC Controls Table
+var oscControls = Array();
+//MIDI Controlls Table
+var midiControls = Array();
+//Return counters
+var oscCount, midiCount;
+//Web Socket Vars
+var wsObject;
+var configSignals=0;
+
+async function init()
+{
+	initWebSockets();
+	await sleep(3000);
+	assembleOSCTable();
+	assembleMIDITable();
+}
+
+function assembleMIDITable()
+{
+	var midiControlCounter=0, controlTypeCounter=0, foundItem=0;
+	var tableRow, tableCol, tempText, selectItem;
+	
+	tableObj = document.getElementById('midiControlsTable');
+	for(midiControlCounter=0; midiControlCounter<midiControls.length; midiControlCounter++)
+	{
+		//Create row for this item
+		tableRow = tableObj.insertRow(midiControlCounter+1);
+		tableRow.setAttribute('id', 'midiID_'+midiControls[midiControlCounter][0]);
+		
+		//Assemble Columns
+		tableCol = document.createElement('td');
+		tableCol = tableRow.insertCell(0);
+		//Insert Index Text
+		tempText = document.createElement('div');
+		tempText.innerHTML = midiControlCounter;
+		tableCol.appendChild(tempText);
+		
+		//Insert MIDI Control Name
+		tableCol = document.createElement('td');
+		tableCol = tableRow.insertCell(1);
+		tempText = document.createElement('input');
+		tempText.setAttribute('id', "midiControlString_"+midiControlCounter);
+		tempText.setAttribute('onChange', 'modifyMIDIValue(1,'+midiControlCounter+')');
+		tempText.setAttribute('type', 'text');
+		tempText.setAttribute('value', midiControls[midiControlCounter][1]);
+		tableCol.appendChild(tempText);
+		
+		//Insert MIDI Control chanel
+		tableCol = document.createElement('td');
+		tableCol = tableRow.insertCell(2);
+		tempText = document.createElement('input');
+		tempText.setAttribute('id', "midiControllChanel"+midiControlCounter);
+		tempText.setAttribute('onChange', 'modifyMIDIValue(2,'+midiControlCounter+')');
+		tempText.setAttribute('type', 'number');
+		tempText.setAttribute('value', midiControls[midiControlCounter][2]);
+		tableCol.appendChild(tempText);
+
+		//Insert MIDI Control Command Byte 0
+		tableCol = document.createElement('td');
+		tableCol = tableRow.insertCell(3);
+		tempText = document.createElement('input');
+		tempText.setAttribute('id', "midiControllCommand"+midiControlCounter);
+		tempText.setAttribute('onChange', 'modifyMIDIValue(3,'+midiControlCounter+')');
+		tempText.setAttribute('type', 'number');
+		tempText.setAttribute('value', midiControls[midiControlCounter][3]);
+		tableCol.appendChild(tempText);
+		
+		//Insert MIDI Control Command Opcode 1
+		tableCol = document.createElement('td');
+		tableCol = tableRow.insertCell(4);
+		tempText = document.createElement('input');
+		tempText.setAttribute('id', "midiControllOpcode1_"+midiControlCounter);
+		tempText.setAttribute('onChange', 'modifyMIDIValue(4,'+midiControlCounter+')');
+		tempText.setAttribute('type', 'number');
+		tempText.setAttribute('value', midiControls[midiControlCounter][4]);
+		tableCol.appendChild(tempText);	
+
+		//Insert MIDI Control Command Opcode 2
+		tableCol = document.createElement('td');
+		tableCol = tableRow.insertCell(5);
+		tempText = document.createElement('input');
+		tempText.setAttribute('id', "midiControllOpcode2_"+midiControlCounter);
+		tempText.setAttribute('onChange', 'modifyMIDIValue(5,'+midiControlCounter+')');
+		tempText.setAttribute('type', 'number');
+		tempText.setAttribute('value', midiControls[midiControlCounter][5]);
+		tableCol.appendChild(tempText);			
+		
+		//Insert Map to OSC Drop Down
+		tableCol = document.createElement('td');
+		tableCol = tableRow.insertCell(6);
+		tempText = document.createElement('select');
+		tempText.setAttribute('id', "midiControlMapTo_"+midiControlCounter);
+		tempText.setAttribute('onChange', 'modifyMIDIValue(6,'+midiControlCounter+')');
+			for(controlTypeCounter=0; controlTypeCounter<oscControls.length; controlTypeCounter++)
+			{
+				selectItem = document.createElement('option');
+				selectItem.setAttribute('value', oscControls[controlTypeCounter][0])
+				selectItem.text = oscControls[controlTypeCounter][1];
+				tempText.appendChild(selectItem);
+			}
+			//add empty item
+				selectItem = document.createElement('option');
+				selectItem.setAttribute('value', "-1")
+				selectItem.text = "";
+				tempText.appendChild(selectItem);
+		tableCol.appendChild(tempText);	
+		
+		//Insert Delete Button
+		tableCol = document.createElement('td');
+		tableCol = tableRow.insertCell(7);
+		tempText = document.createElement('div');
+		tempText.setAttribute('id', 'delmidi_'+midiControlCounter);
+		tempText.setAttribute('onClick', 'removeMIDIControl('+midiControlCounter+')');
+		tempText.innerHTML = '&#10060;';
+		tableCol.appendChild(tempText);
+	}
+	//Set the TYPE selector to the saved type in the control array
+	for(midiControlCounter=0; midiControlCounter<midiControls.length; midiControlCounter++)
+	{
+		selectItem = getOSCMapNameFromID(midiControls[midiControlCounter][6]);
+		if(selectItem!=-1)
+		{
+			for(mapCounter=0; mapCounter<document.getElementById('midiControlMapTo_'+midiControlCounter).options.length; mapCounter++)
+			{
+				if(document.getElementById('midiControlMapTo_'+midiControlCounter).options[mapCounter].value == midiControls[midiControlCounter][6])
+				{
+					document.getElementById('midiControlMapTo_'+midiControlCounter).options[mapCounter].selected=true;
+					break;
+				}
+			}		
+		}
+		else
+		{
+			document.getElementById('midiControlMapTo_'+midiControlCounter).options[document.getElementById('midiControlMapTo_'+midiControlCounter).options.length-1].selected=true;
+		}
+	}
+}
+
+function getOSCMapIDFromName(value)
+{
+	var oscCounter=0;
+	for(oscCounter=0; oscCounter<oscControls.length; oscCounter++)
+	{
+		if(oscControls[oscCounter][1]==value)
+		{
+			return oscCounter;
+		}
+	}
+	return -1;
+}
+
+function getOSCMapNameFromID(id)
+{
+	var oscCounter=0;
+	for(oscCounter=0; oscCounter<oscControls.length; oscCounter++)
+	{
+		if(oscControls[oscCounter][0]==id)
+		{
+			return oscControls[oscCounter][1];
+		}
+	}
+	return -1;
+}
+
+function clearMIDIUITable()
+{
+	var tableElementsCounter=0;
+	tObj = document.getElementById('midiControlsTable');
+	for(tableElementsCounter=midiControls.length; tableElementsCounter>0; tableElementsCounter--)
+	{
+		tObj.deleteRow(tableElementsCounter);
+	}
+}
+
+function addMIDIItem(midiControlName, midiChanel, midiCommand, midiOpCode1, midiOpCode2, mapToOSCItem)
+{
+	clearMIDIUITable();
+	midiControls.push(Array(midiControls.length, midiControlName, midiChanel, midiCommand, midiOpCode1, midiOpCode2, mapToOSCItem));
+	assembleMIDITable();
+}
+
+function removeMIDIControl(id)
+{
+	var tempMIDIControlArray = Array();
+	var midiControlArrayCounter = 0;
+	
+	clearMIDIUITable();
+	for(midiControlArrayCounter=0; midiControlArrayCounter<midiControls.length; midiControlArrayCounter++)
+	{
+		if(midiControlArrayCounter!=id)
+		{
+			tempMIDIControlArray.push(midiControls[midiControlArrayCounter]);
+		}
+	}
+	midiControls = Array();
+	for(midiControlArrayCounter=0; midiControlArrayCounter<tempMIDIControlArray.length; midiControlArrayCounter++)
+	{
+		midiControls.push(tempMIDIControlArray[midiControlArrayCounter])
+		tempMIDIControlArray[midiControlArrayCounter][0]=midiControlArrayCounter;
+	}
+	delete tempMIDIControlArray;
+	assembleMIDITable();
+}
+
+function modifyMIDIValue(index, id)
+{
+	switch(index)
+	{
+		case 1:	midiControls[id][index] = document.getElementById('midiControlString_'+id).value;
+				break;
+		case 2:	midiControls[id][index] = document.getElementById('midiControllChanel'+id).value;
+				break;
+		case 3:	midiControls[id][index] = document.getElementById('midiControllCommand'+id).value;
+				break;
+		case 4:	midiControls[id][index] = document.getElementById('midiControllOpcode1_'+id).value;
+				break;
+		case 5:	midiControls[id][index] = document.getElementById('midiControllOpcode2_'+id).value;
+				break;
+		case 6:	midiControls[id][index] = document.getElementById('midiControlMapTo_'+id).value;
+				break;
+	}
+	
+}
+
+function assembleOSCTable()
+{
+	var oscControlCounter=0, controlTypeCounter=0;
+	var tableRow, tableCol, tempText, selectItem;
+	
+	tableObj = document.getElementById('oscControlsTable');
+	for(oscControlCounter=0; oscControlCounter<oscControls.length; oscControlCounter++)
+	{
+		//Create row for this item
+		tableRow = tableObj.insertRow(oscControlCounter+1);
+		tableRow.setAttribute('id', 'oscID_'+oscControls[oscControlCounter][0]);
+		
+		//Assemble Columns
+		tableCol = document.createElement('td');
+		tableCol = tableRow.insertCell(0);
+		//Insert Index Text
+		tempText = document.createElement('div');
+		tempText.innerHTML = oscControlCounter;
+		tableCol.appendChild(tempText);
+		
+		//Insert OSC Control Name
+		tableCol = document.createElement('td');
+		tableCol = tableRow.insertCell(1);
+		tempText = document.createElement('input');
+		tempText.setAttribute('id', "oscControlString_"+oscControlCounter);
+		tempText.setAttribute('onChange', 'modifyOSCValue(1,'+oscControlCounter+')');
+		tempText.setAttribute('type', 'text');
+		tempText.setAttribute('value', oscControls[oscControlCounter][1]);
+		tableCol.appendChild(tempText);
+		
+		//Insert OSC Control number of values
+		tableCol = document.createElement('td');
+		tableCol = tableRow.insertCell(2);
+		tempText = document.createElement('input');
+		tempText.setAttribute('id', "oscControlNumberOfValues_"+oscControlCounter);
+		tempText.setAttribute('onChange', 'modifyOSCValue(2,'+oscControlCounter+')');
+		tempText.setAttribute('type', 'number');
+		tempText.setAttribute('value', oscControls[oscControlCounter][2]);
+		tableCol.appendChild(tempText);
+		
+		//Insert OSC Control number of values
+		tableCol = document.createElement('td');
+		tableCol = tableRow.insertCell(3);
+		tempText = document.createElement('select');
+		tempText.setAttribute('id', "oscControlType_"+oscControlCounter);
+		tempText.setAttribute('onChange', 'modifyOSCValue(3,'+oscControlCounter+')');
+			//Add Integer Option
+			selectItem = document.createElement('option');
+			selectItem.setAttribute('value', "i")
+			selectItem.text = "I";
+			tempText.appendChild(selectItem);
+			//Add Float Option
+			selectItem = document.createElement('option');
+			selectItem.setAttribute('value', "f")
+			selectItem.text = "F";
+			tempText.appendChild(selectItem);
+		tableCol.appendChild(tempText);	
+		
+		//Insert Delete Button
+		tableCol = document.createElement('td');
+		tableCol = tableRow.insertCell(4);
+		tempText = document.createElement('div');
+		tempText.setAttribute('id', 'delosc_'+oscControlCounter);
+		tempText.setAttribute('onClick', 'removeOSCControl('+oscControlCounter+')');
+		tempText.innerHTML = '&#10060;';
+		tableCol.appendChild(tempText);
+	}
+	//Set the TYPE selector to the saved type in the control array
+	for(oscControlCounter=0; oscControlCounter<oscControls.length; oscControlCounter++)
+	{
+		for(controlTypeCounter=0; controlTypeCounter<document.getElementById('oscControlType_'+oscControlCounter).options.length; controlTypeCounter++)
+		{
+			if( document.getElementById('oscControlType_'+oscControlCounter).options[controlTypeCounter].value == oscControls[oscControlCounter][3] )
+			{
+				document.getElementById('oscControlType_'+oscControlCounter).options[controlTypeCounter].selected=true;
+				break;
+			}
+		}
+	}
+}
+
+function clearOSCUITable()
+{
+	var tableElementsCounter=0;
+	tObj = document.getElementById('oscControlsTable');
+	for(tableElementsCounter=oscControls.length; tableElementsCounter>0; tableElementsCounter--)
+	{
+		tObj.deleteRow(tableElementsCounter);
+	}
+}
+
+function addOSCItem(oscName, numberOfValues, valueType)
+{
+	clearOSCUITable();
+	oscControls.push(Array(oscControls.length,oscName, numberOfValues, valueType));
+	assembleOSCTable();
+	
+	clearMIDIUITable();
+	assembleMIDITable();
+}
+
+function removeOSCControl(id)
+{
+	var tempOSCControlArray = Array();
+	var oscControlArrayCounter = 0;
+	var tempName;
+	
+	//delete the MIDIControll map to this item
+	for(oscControlArrayCounter=0; oscControlArrayCounter<midiControls.length; oscControlArrayCounter++)
+	{
+		if(midiControls[oscControlArrayCounter][6]==id)
+		{
+			midiControls[oscControlArrayCounter][6]=-1;
+		}
+	}
+	clearOSCUITable();
+	for(oscControlArrayCounter=0; oscControlArrayCounter<oscControls.length; oscControlArrayCounter++)
+	{
+		if(oscControlArrayCounter!=id)
+		{
+			tempOSCControlArray.push(oscControls[oscControlArrayCounter]);
+		}
+	}
+	oscControls = Array();
+	for(oscControlArrayCounter=0; oscControlArrayCounter<tempOSCControlArray.length; oscControlArrayCounter++)
+	{
+		oscControls.push(tempOSCControlArray[oscControlArrayCounter])
+		tempOSCControlArray[oscControlArrayCounter][0]=oscControlArrayCounter;
+	}
+	delete tempOSCControlArray;
+	//remap osc items into midicontrols
+	for(oscControlArrayCounter=0; oscControlArrayCounter<midiControls.length; oscControlArrayCounter++)
+	{
+		tempName = document.getElementById('midiControlMapTo_'+oscControlArrayCounter).options[document.getElementById('midiControlMapTo_'+oscControlArrayCounter).selectedIndex].text;
+		midiControls[oscControlArrayCounter][6] = getOSCMapIDFromName(tempName);
+	}
+	assembleOSCTable();
+	
+	clearMIDIUITable();
+	assembleMIDITable();
+}
+
+function modifyOSCValue(index, id)
+{
+	if(index==1)
+	{
+		oscControls[id][index] = document.getElementById('oscControlString_'+id).value;
+		clearMIDIUITable();
+		assembleMIDITable();
+	}
+	else if(index==2)
+	{
+		oscControls[id][index] = document.getElementById('oscControlNumberOfValues_'+id).value;
+	}
+	else if(index==3)
+	{
+		oscControls[id][index] = document.getElementById('oscControlType_'+id).value;
+	}
+}
+
+function initWebSockets()
+{
+	wsObject = new WebSocket("ws://192.168.1.111/ws");
+
+	wsObject.onopen = function()
+	{
+		wsObject.send("countosc")
+	};
+
+	wsObject.onclose = function()
+	{
+	};
+	
+	wsObject.onmessage = function(event)
+	{
+		if(configSignals==0)
+		{
+			//get osc record count
+			countOSC(event.data);
+			configSignals++;
+			wsObject.send("countmidi")
+			
+		}
+		else if(configSignals==1)
+		{
+			//get osc record count
+			countMIDI(event.data);
+			configSignals++;
+			wsObject.send("getosc")
+			
+		}
+		else if(configSignals==2)
+		{
+			getOSCObjects(event.data);
+			configSignals++;
+			wsObject.send("getmidi");
+		}
+		else if(configSignals==3)
+		{
+			getMIDIObjects(event.data);
+			configSignals++;
+		}
+		
+	};
+}
+
+async function countOSC(data)
+{
+	oscCount = new Int16Array(await data.arrayBuffer());
+}
+async function countMIDI(data)
+{
+	midiCount = new Int16Array(await data.arrayBuffer());
+}
+
+async function getOSCObjects(data)
+{
+	var oscReturnData;
+	var itemID;
+	var itemName="";
+	var itemValueCount;
+	var itemValueType
+	var iCnt=0, fieldIndex=0, oscItemCount=0;
+	var numberOfItems=0;
+	var fieldTerminator = 44, recodTerminator=59;
+	
+	oscReturnData = new Int8Array(await data.arrayBuffer());
+	
+	numberOfItems = oscCount;
+	if(numberOfItems==0)
+	{
+		return;
+	}	
+	for(oscItemCount=0; oscItemCount<numberOfItems; oscItemCount++)
+	{
+		//Grab the OSC item ID
+		itemID = new Int16Array(oscReturnData.buffer.slice(fieldIndex,fieldIndex+2));
+		fieldIndex+=3;
+		//Grab the OSC Object Name String
+		for(iCnt=fieldIndex; iCnt<oscReturnData.indexOf(fieldTerminator,fieldIndex); iCnt++)
+		{
+			itemName += String.fromCharCode(oscReturnData[iCnt]);
+		}
+		fieldIndex = iCnt+1;
+		//Grab the number of vars for this item
+		itemValueCount = new Int16Array(oscReturnData.buffer.slice(fieldIndex,fieldIndex+2));
+		fieldIndex+=3;
+		//Grab the Value Type Char
+		itemValueType = String.fromCharCode(oscReturnData[fieldIndex]);
+		fieldIndex+=2;
+		//console.log(itemID+"\t"+itemName+"\t"+itemValueCount+"\t"+itemValueType);
+		oscControls.push(Array(itemID,itemName, itemValueCount, itemValueType));
+		itemName="";
+	}
+}
+
+async function getMIDIObjects(data)
+{
+	var midiReturnData;
+	var itemID;
+	var itemName="";
+	var midiChanel;
+	var midiControl;
+	var controlValue, controlValueTwo;
+	var oscMapToId;
+	var iCnt=0, fieldIndex=0, midiItemCount=0;
+	var numberOfItems=0;
+	var fieldTerminator = 44, recodTerminator=59;
+
+	midiReturnData = new Int8Array(await data.arrayBuffer());
+	
+	numberOfItems = midiCount;
+	if(numberOfItems==0)
+	{
+		return;
+	}	
+	//console.log("MIDI Items\t"+numberOfItems)
+	for(midiItemCount=0; midiItemCount<numberOfItems; midiItemCount++)
+	{
+		//Grab the MIDI item ID
+		itemID = new Int16Array(midiReturnData.buffer.slice(fieldIndex,fieldIndex+2));
+		fieldIndex+=3;
+		//Grab the MIDI Object Name String
+		for(iCnt=fieldIndex; iCnt<midiReturnData.indexOf(fieldTerminator,fieldIndex); iCnt++)
+		{
+			itemName += String.fromCharCode(midiReturnData[iCnt]);
+		}
+		fieldIndex = iCnt+1;
+		//Grab the MIDI Chanel byte
+		midiChanel = midiReturnData[fieldIndex];
+		fieldIndex+=2;
+		//Grab the MIDI COntroll ID byte
+		midiControl = midiReturnData[fieldIndex];
+		fieldIndex+=2;
+		//Gab the MIDI value byte 0
+		controlValue = midiReturnData[fieldIndex];
+		fieldIndex+=2;
+		//Grab the MIDI value byte 1
+		controlValueTwo = midiReturnData[fieldIndex];
+		fieldIndex+=2;
+		//Grab the map to OSC ID
+		oscMapToId = (new Int16Array(midiReturnData.buffer.slice(fieldIndex,fieldIndex+2))).toString();
+		fieldIndex+=3;
+		midiControls.push(Array(itemID, itemName, midiChanel, midiControl, controlValue, controlValueTwo, oscMapToId));
+		itemName="";
+		//console.log("Record\t"+midiItemCount+"\tfinished at\t"+fieldIndex);
+	}
+}
+
+function countItems(itemBuffer, recordTerminator)
+{
+	var itemCount=0;
+	var itemIndex=0;
+	while(itemIndex!=-1)
+	{
+		itemIndex=itemBuffer.indexOf(recordTerminator, itemIndex);
+		if(itemIndex!=-1)
+		{
+			itemCount++;
+			//console.log("Item\t"+itemCount+"\tEnds at\t"+itemIndex);
+			itemIndex++;
+		}
+	}
+	return itemCount;
+}
+
+function clearOSCConfig()
+{
+	wsObject.send("clearosc");
+}
+function clearMIDIConfig()
+{
+	wsObject.send("clearmidi");
+}
+function saveConfig()
+{
+	saveOSCConfig();
+	saveMIDIConfig();
+	wsObject.send("S");
+	document.location.reload(true);
+}
+function saveOSCConfig()
+{
+	clearOSCConfig();
+	var oscItemCounter = 0;
+	for(oscItemCounter=0; oscItemCounter<oscControls.length; oscItemCounter++)
+	{
+		wsObject.send("O:"+oscControls[oscItemCounter][0]+","+oscControls[oscItemCounter][1]+
+		              ","+oscControls[oscItemCounter][2]+","+oscControls[oscItemCounter][3]+";");
+	}
+}
+function saveMIDIConfig()
+{
+	clearMIDIConfig();
+	var midiItemCounter = 0;
+	for(midiItemCounter=0; midiItemCounter<midiControls.length; midiItemCounter++)
+	{
+		wsObject.send("M:"+midiControls[midiItemCounter][0]+","+midiControls[midiItemCounter][1]+","+midiControls[midiItemCounter][2]+","+
+					  midiControls[midiItemCounter][3]+","+midiControls[midiItemCounter][4]+","+midiControls[midiItemCounter][5]+","+
+					  midiControls[midiItemCounter][6]+";");
+	}
+}
+
+
+</script>
+</body></html> 

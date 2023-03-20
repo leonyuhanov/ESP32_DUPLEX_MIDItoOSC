@@ -9,6 +9,7 @@ typedef struct midiNode{
   char _value;
   float _scaledValue;
   char _isNote;
+  short int _mapsToOSCnodeID;
   midiNode* nextNode; 
 }MIDINODE;
 
@@ -17,7 +18,7 @@ class midiDeviceMapper
   public:
     midiDeviceMapper();
     
-    short int addNode(char* deviceName, char midiChanel, char controllID, char value, char isNote);
+    short int addNode(char* deviceName, char midiChanel, char controllID, char value, char isNote, short int mapsToOscId);
     
     MIDINODE* findNode(unsigned short int nodeID);
     MIDINODE* findNode(char* deviceName);
@@ -31,12 +32,16 @@ class midiDeviceMapper
     short int getValue(char* deviceName);
     short int getScaledValue(char controllID, char originalValue);
     const char* getNote(char value);
-	unsigned short int getOctave(char value);
+	  unsigned short int getOctave(char value);
     unsigned short int getScaledNote(char value, char startAt, char range, char maxTarget);
     
     void setNode(char* deviceName, short int midiChanel=-1, short int controllID=-1, short int value=-1);
     void setNode(unsigned short int nodeID, short int midiChanel=-1, short int controllID=-1, short int value=-1);
     void setNode(char midiChanel, char controllID, char value);
+
+    void deleteNode(unsigned short int nodeID);
+    MIDINODE* findPrev(unsigned short int nodeID);
+    MIDINODE* findLast();
     
     unsigned short int totalNodes;
     MIDINODE* startPointer;

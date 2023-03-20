@@ -11,26 +11,93 @@ midiDeviceMapper::midiDeviceMapper()
   _maxValue = 127;
 }
 
-short int midiDeviceMapper::addNode(char* deviceName, char midiChanel, char controllID, char value, char isNote)
+short int midiDeviceMapper::addNode(char* deviceName, char midiChanel, char controllID, char value, char isNote, short int mapsToOscId)
 {
   MIDINODE* nodePointer;
   if( findNode(deviceName, midiChanel, controllID)==NULL )
   {
     nodePointer = (MIDINODE*) malloc(sizeof(MIDINODE));
-    nodePointer->_nodeID = totalNodes+1;
+    nodePointer->_nodeID = totalNodes;
     nodePointer->_deviceName = new char[strlen(deviceName)+1];
     memcpy(nodePointer->_deviceName, deviceName,strlen(deviceName)+1);
     nodePointer->_midiChanel = midiChanel;
     nodePointer->_controllID = controllID;
     nodePointer->_value = value;
     nodePointer->_scaledValue = ((float)value/_maxValue);
-	  nodePointer->_isNote = isNote;
+	nodePointer->_isNote = isNote;
+	nodePointer->_mapsToOSCnodeID = mapsToOscId;
     nodePointer->nextNode = startPointer;
     startPointer = nodePointer;
     totalNodes++;
     return 1;
   }
   return 2;
+}
+
+void midiDeviceMapper::deleteNode(unsigned short int nodeID)
+{
+  MIDINODE* currentNode = findNode(nodeID);
+  if(currentNode==NULL)
+  {
+    return;
+  }
+  MIDINODE* prevNode = findPrev(nodeID);
+  
+
+  //check if Prev node exists or its the last node
+  if(totalNodes==1)
+  {
+    currentNode = startPointer;
+    delete currentNode;
+    startPointer = NULL;
+    totalNodes=0;
+  }
+  else if(prevNode==NULL)
+  {
+    startPointer = currentNode->nextNode;
+    delete currentNode;
+    totalNodes--;
+  }
+  else
+  {
+    prevNode->nextNode = currentNode->nextNode;
+    delete currentNode;
+    totalNodes--;
+  }
+}
+
+MIDINODE* midiDeviceMapper::findPrev(unsigned short int nodeID)
+{
+  MIDINODE* currentNode = startPointer;
+  MIDINODE* nextNode = NULL;
+  
+  while(currentNode != NULL)
+  { 
+    nextNode = currentNode->nextNode;
+    if(nextNode!=NULL)
+    {
+      if(nextNode->_nodeID==nodeID)
+      {
+        return currentNode;
+      }
+    }
+    currentNode = nextNode; 
+  } 
+  return NULL;
+}
+
+MIDINODE* midiDeviceMapper::findLast()
+{
+  MIDINODE* nodePointer = startPointer;
+  while(nodePointer != NULL)
+  { 
+      if(nodePointer->nextNode==NULL)
+      {
+        return nodePointer;
+      }
+      nodePointer = nodePointer->nextNode; 
+   } 
+   return NULL;
 }
 
 
