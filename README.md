@@ -18,8 +18,10 @@ For the MIDI OUT port on the device:
 
 For the MIDI IN port on the device:
 
-* PIN 4 is the DATA OUT pin that connects into Pin 26 on the ESP32
+* PIN 4 is the DATA IN pin that connects into Pin 26 on the ESP32
 * PIN 5 connects to +5v of the ESP32
 * PIN 2 conects to GND of the ESP32
 
-You will need to upload the contents of the DATA folder to the ESP32 SPIFFS using the ESP32 SKetch Data Upoad tool -> https://github.com/me-no-dev/arduino-esp32fs-plugin
+You will need to upload the contents of the DATA folder to the ESP32 SPIFFS using the ESP32 SKetch Data Upoad tool https://github.com/me-no-dev/arduino-esp32fs-plugin
+
+Set up your WIFI network defails int he code/compile and upload. You will need to modify the IP address detais for your network and set up Touch osc acordingly  
