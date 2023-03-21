@@ -51,6 +51,8 @@ i{
 <body onload="init()">
 <h1> MIDI to OSC Mapper </h1>
 
+<div id="lastOSC"></div>
+
 <table id="midiControlsTable">
 <tbody>
 <tr>
@@ -102,6 +104,8 @@ var oscCount, midiCount;
 //Web Socket Vars
 var wsObject;
 var configSignals=0;
+
+var globalReturnData;
 
 async function init()
 {
@@ -520,8 +524,43 @@ function initWebSockets()
 			getMIDIObjects(event.data);
 			configSignals++;
 		}
+		else if(configSignals==4)
+		{
+			//Update last OSC message seen from controler
+			lastOSCMessage(event.data);
+		}
 		
 	};
+}
+
+async function lastOSCMessage(data)
+{
+	var oscReturnData;
+	var itemValueType
+	var itemName="";
+	var itemValue=0;
+	var fieldTerminator = 44;
+	var iCnt=0, fieldIndex=0;
+	
+	//document.getElementById("lastOSC").innerHTML = await data.arrayBuffer();
+	oscReturnData = new Int8Array(await data.arrayBuffer());
+	globalReturnData = oscReturnData;
+	//Grab the OSC Object Name String
+	for(iCnt=fieldIndex; iCnt<oscReturnData.indexOf(fieldTerminator,fieldIndex); iCnt++)
+	{
+		itemName += String.fromCharCode(oscReturnData[iCnt]);
+	}
+	fieldIndex=iCnt+1;
+	//Grab the Value Type Char
+	itemValueType = String.fromCharCode(oscReturnData[fieldIndex]);
+	fieldIndex+=2;
+	//Grab the osc value
+	itemValue = new Float32Array(oscReturnData.buffer.slice(fieldIndex,fieldIndex+4));
+	itemValue = Number(itemValue).toFixed(2);
+	document.getElementById("lastOSC").innerHTML = "Last OSC Message FROM ["+
+	                                               itemName+"]\tType["+itemValueType+
+												   "]\tValue["+itemValue+"]";
+	
 }
 
 async function countOSC(data)

@@ -22,8 +22,8 @@ byte rxPin = 25, txPin = 26;
 
 //Network Stuff
 //Please enter corect details for wifi details
-const char * ssid = "WIFISSID";
-const char * password = "WIFIKEY";
+const char * ssid = "SSID";
+const char * password = "KEY";
 AsyncUDP udp;
 IPAddress touchOSCAddress(192,168,1,113);
 IPAddress thisDevice(192,168,1,111);   
@@ -43,16 +43,19 @@ const char* midiConfigFilePath="/midiconfigFile";
 const char* indexPageFilePath="/index.html";
 AsyncWebServer server(80);
 AsyncWebSocket ws("/ws");
-unsigned short int indexFileSize=0, configFileSize=0;
+unsigned short int webUIClientID=0;
+byte WSConnectState=0;
 
 //OSC COnfig
 osc oscObject;
 unsigned int oscRXPort = 5555, oscTXPort = 5556;
 LLNODE* oscNode;
-short int packetSize=0;
+unsigned short int packetSize=0;
 
 void setup()
 {
+
+  
   Serial.begin(115200);
   Serial.println("\r\n\r\n");
 
@@ -85,7 +88,40 @@ void setup()
   server.addHandler(&ws);
   server.begin();
 
-  /*
+  //Uncoment to load the default system config for the Korg Monologue
+  //loadDefaults();
+ 
+  //Set up UDP Endpoint
+  if(udp.listen(oscRXPort))
+  {
+    udp.onPacket([](AsyncUDPPacket packet)
+    {
+      packetSize = packet.length();
+      memcpy(oscObject.packetBuffer, packet.data(), packet.length());
+      for(iCnt=0; iCnt<packet.length(); iCnt++)
+      {
+        Serial.printf("\r\n%d\t[%d]\t[%c]", iCnt, oscObject.packetBuffer[iCnt], oscObject.packetBuffer[iCnt]);
+      }
+      oscObject.currentPacketSize = packet.length();
+      oscObject.toggleState();
+      oscObject.parseOSCPacket();
+      sendMidi(oscObject.currentControllID);
+      if(WSConnectState==1)
+      {
+        //ws.textAll(oscObject.packetBuffer);
+        txLastOSCMessageToUI(oscObject.packetBuffer, packet.length());
+      }
+    });
+  }
+  
+  //Set up SOftware Serial for MIDI IN/OUT
+  pinMode(rxPin, INPUT);
+  pinMode(txPin, OUTPUT);
+  swSer.begin(31250, SWSERIAL_8N1, rxPin, txPin, false);  
+}
+
+void loadDefaults()
+{
   midiMap.addNode("PITCH_VCO2",1,35,0,0,0);
   midiMap.addNode("SHAPE_VCO1",1,36,0,0,1);
   midiMap.addNode("SHAPE_VCO2",1,37,0,0,2);
@@ -135,30 +171,6 @@ void setup()
   oscObject.addControll("/LFO_MODE",1,'f');
   oscObject.addControll("/AUDIO_OFF",1,'f');
   oscObject.addControll("/RESET_CONTROL",1,'f');
-  */
- 
-  //Set up UDP Endpoint
-  if(udp.listen(oscRXPort))
-  {
-    udp.onPacket([](AsyncUDPPacket packet)
-    {
-      packetSize = packet.length();
-      memcpy(oscObject.packetBuffer, packet.data(), packet.length());
-      for(iCnt=0; iCnt<packet.length(); iCnt++)
-      {
-        Serial.printf("\r\n%d\t[%d]\t[%c]", iCnt, oscObject.packetBuffer[iCnt], oscObject.packetBuffer[iCnt]);
-      }
-      oscObject.currentPacketSize = packet.length();
-      oscObject.toggleState();
-      oscObject.parseOSCPacket();
-      sendMidi(oscObject.currentControllID);
-    });
-  }
-  
-  //Set up SOftware Serial for MIDI IN/OUT
-  pinMode(rxPin, INPUT);
-  pinMode(txPin, OUTPUT);
-  swSer.begin(31250, SWSERIAL_8N1, rxPin, txPin, false);  
 }
 
 //---------------------------------------------------UI---------------------------------------------------
@@ -172,6 +184,7 @@ void initFS()
 void handleRoot(AsyncWebServerRequest *request)
 {
   File tempFile;
+	unsigned short int indexFileSize=0;
 
   tempFile = SPIFFS.open(indexPageFilePath, "r");
   indexFileSize = tempFile.size();
@@ -201,18 +214,22 @@ void blankFunction()
 void onWsEvent(AsyncWebSocket * server, AsyncWebSocketClient * client, AwsEventType type, void * arg, uint8_t *data, size_t len)
 {  
   char* tempCommandString;
+ 
   //Hadnle socket COnnect event
   if(type == WS_EVT_CONNECT)
   {
-    Serial.println("\r\nClient connected!");  
+    Serial.println("\r\nClient connected!");
+    WSConnectState=1;  
   }
   else if(type == WS_EVT_DISCONNECT)
   {
     Serial.println("\r\nClient Disconnected!");
+    WSConnectState=0;
   }
   //Handle Data reception
   else if(type == WS_EVT_DATA)
   {
+    webUIClientID = client->id();
     //Store received command
     tempCommandString = new char[len+1];
     memcpy(tempCommandString, data, len);
@@ -651,6 +668,44 @@ void saveMIDIConfig()
   Serial.printf("\r\nSaved\t%d bytes to the MIDI Config file!", bytesWritten);
 }
 
+void txLastOSCMessageToUI(char* packetBuffer, unsigned short int packetLength)
+{
+  unsigned short int bufferSize = 0, currentIndex=0;
+  float currentValue=0;
+  unsigned char* oscObjectsBuffer;
+  unsigned char* floatCharPointer;
+
+  //init the bufferSize
+  bufferSize = strlen(packetBuffer)+1+1+1+4;
+  oscObjectsBuffer = new unsigned char[bufferSize];
+
+  //OSC Name
+  memcpy(oscObjectsBuffer, packetBuffer, strlen(packetBuffer));
+  currentIndex+=(strlen(packetBuffer));
+  oscObjectsBuffer[currentIndex]=44;
+  currentIndex++;
+  
+  //OSC Value Type
+  if( findNeedleCount(packetBuffer, packetLength, 'f', 1)!=-1 )
+  {
+    oscObjectsBuffer[currentIndex] = 'f';
+  }
+  else
+  {
+    oscObjectsBuffer[currentIndex] = 'i';
+  }
+  currentIndex++;
+  oscObjectsBuffer[currentIndex]=44;
+  currentIndex++;
+
+  oscObjectsBuffer[currentIndex] = packetBuffer[packetLength-1];
+  oscObjectsBuffer[currentIndex+1] = packetBuffer[packetLength-2];
+  oscObjectsBuffer[currentIndex+2] = packetBuffer[packetLength-3];
+  oscObjectsBuffer[currentIndex+3] = packetBuffer[packetLength-4];
+    
+  ws.binary(webUIClientID, oscObjectsBuffer, bufferSize); 
+}
+
 void sendOSCConfig(AsyncWebSocketClient * client)
 {
   unsigned short int bufferSize=0, oscNodeCounter=0, currentIndex=0;
@@ -808,7 +863,7 @@ void sendMIDIConfig(AsyncWebSocketClient * client)
         midiObjectsBuffer[currentIndex] = integerCharPointer[0];
         midiObjectsBuffer[currentIndex+1] = integerCharPointer[1];
         currentIndex+=2;
-        //Terinate
+        //Terminate
         midiObjectsBuffer[currentIndex] = 59;
         currentIndex++;
       }
@@ -866,7 +921,7 @@ void loop()
   	//debug
     if( rejectedNotes(dataIn) )
     {
-      Serial.printf("\r\nRead->\t[%d]",dataIn);
+      //Serial.printf("\r\nRead->\t[%d]",dataIn);
     	//What to do depending on 1st byte
       switch(dataIn)
     	{
@@ -951,14 +1006,14 @@ void processControllChange(char midiChanel)
       readyToWrite++;
     }
   }
-  Serial.printf("\r\n\tInside ProcessChange\tmidiChanel[%d]\tReceived[%d|%d|%d]", midiChanel, dataIn ,midiSerialData[1],midiSerialData[2]);
+  //Serial.printf("\r\n\tInside ProcessChange\tmidiChanel[%d]\tReceived[%d|%d|%d]", midiChanel, dataIn ,midiSerialData[1],midiSerialData[2]);
   //locate MIDI object in system
   if(midiMap.findNode(midiSerialData[0], midiSerialData[1])!=NULL)
   {
     midiMap.setNode(midiSerialData[0], midiSerialData[1], midiSerialData[2]);
-    Serial.printf("\r\nControll [ %d ]\t[");
-    Serial.print(midiMap.findNode(midiSerialData[0], midiSerialData[1])->_deviceName);
-    Serial.printf("]\tValue [ %d ]\tScaled[ %f ]", midiSerialData[2], round(midiMap.findNode(midiSerialData[0], midiSerialData[1])->_scaledValue*100));
+    //Serial.printf("\r\nControll [ %d ]\t[");
+    //Serial.print(midiMap.findNode(midiSerialData[0], midiSerialData[1])->_deviceName);
+    //Serial.printf("]\tValue [ %d ]\tScaled[ %f ]", midiSerialData[2], round(midiMap.findNode(midiSerialData[0], midiSerialData[1])->_scaledValue*100));
     //locate OSC maping
     oscItem = oscObject.findByID(midiMap.findNode(midiSerialData[0], midiSerialData[1])->_mapsToOSCnodeID);
     if(oscItem!=NULL)
@@ -994,7 +1049,6 @@ void processProgramChange(char midiChanel)
     Serial.printf("\r\nProgram [ %d ]\t[");
     Serial.print(midiMap.findNode(midiSerialData[0], midiSerialData[1])->_deviceName);
     Serial.printf("]");
-    //txData(midiMap.findNode(midiSerialData[0], midiSerialData[1])->_nodeID);
   }
 }
 
@@ -1008,9 +1062,9 @@ void txOSC(unsigned short int OSCNodeID)
   LLNODE* oscItem = oscObject.findByID(OSCNodeID);
   if(oscItem!=NULL)
   {
-    Serial.printf("\r\n\tSending [");
-    Serial.print(oscItem->_controllName);
-    Serial.printf("] Value [%f]", oscItem->_currentValue);
+    //Serial.printf("\r\n\tSending [");
+    //Serial.print(oscItem->_controllName);
+    //Serial.printf("] Value [%f]", oscItem->_currentValue);
     txPacketSize += strlen(oscItem->_controllName);
     oscBuffer = new char[txPacketSize];
     memcpy(oscBuffer, oscItem->_controllName, strlen(oscItem->_controllName));
@@ -1027,11 +1081,13 @@ void txOSC(unsigned short int OSCNodeID)
     
     //tx to touch osc
     dataSent = udp.writeTo((uint8_t *)oscBuffer, txPacketSize, touchOSCAddress, oscTXPort);
-    Serial.printf("\t\tSent %d bytes.", dataSent);
+    /*
+	Serial.printf("\t\tSent %d bytes.", dataSent);
     for(bufferIndex=0; bufferIndex<txPacketSize; bufferIndex++)
     {
       Serial.printf("\r\n%d\t[%d]\t[%c]", bufferIndex, oscBuffer[bufferIndex], oscBuffer[bufferIndex]);
     }
+	*/
   }
 
 }
