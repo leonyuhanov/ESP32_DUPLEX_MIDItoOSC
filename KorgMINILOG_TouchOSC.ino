@@ -6,7 +6,6 @@
 #include "AsyncUDP.h"
 #include "midiDeviceMapper.h"
 #include "osc.h"
-#include <SoftwareSerial.h>
 
 char midiSerialData[3];
 char* tempString = new char[5];
@@ -16,7 +15,6 @@ byte readyToWrite=0;
 byte dataIn;
 midiDeviceMapper midiMap;
 MIDINODE* midiNode;
-SoftwareSerial swSer;
 byte rxPin = 25, txPin = 26;
 
 
@@ -118,7 +116,8 @@ void setup()
   //Set up SOftware Serial for MIDI IN/OUT
   pinMode(rxPin, INPUT);
   pinMode(txPin, OUTPUT);
-  swSer.begin(31250, SWSERIAL_8N1, rxPin, txPin, false);  
+
+  Serial2.begin(31250, SERIAL_8N1, rxPin, txPin);
 }
 
 void loadDefaults()
@@ -923,11 +922,11 @@ void countMIDI(AsyncWebSocketClient * client)
 
 void loop()
 {
-  dataAvail = swSer.available();
+  dataAvail = Serial2.available();
   if( dataAvail )
   {
     //Read in 1st Byte
-  	dataIn = swSer.read();
+    dataIn = Serial2.read();
   	//debug
     if( rejectedNotes(dataIn) )
     {
@@ -972,10 +971,10 @@ void processNote(char midiChanel, char noteActionType)
   readyToWrite++;
   while(readyToWrite!=3)
   {
-    dataAvail = swSer.available();
+    dataAvail = Serial2.available();
     if( dataAvail )
     {
-      midiSerialData[readyToWrite] = swSer.read();
+      midiSerialData[readyToWrite] = Serial2.read();
       readyToWrite++;
     }
   }
@@ -1009,10 +1008,10 @@ void processControllChange(char midiChanel)
   readyToWrite++;
   while(readyToWrite!=3)
   {
-    dataAvail = swSer.available();
+    dataAvail = Serial2.available();
     if( dataAvail )
     {
-      midiSerialData[readyToWrite] = swSer.read();
+      midiSerialData[readyToWrite] = Serial2.read();
       readyToWrite++;
     }
   }
@@ -1044,10 +1043,10 @@ void processProgramChange(char midiChanel)
   readyToWrite++;
   while(readyToWrite!=2)
   {
-    dataAvail = swSer.available();
+    dataAvail = Serial2.available();
     if( dataAvail )
     {
-      midiSerialData[readyToWrite] = swSer.read();
+      midiSerialData[readyToWrite] = Serial2.read();
       readyToWrite++;
     }
   }
@@ -1073,9 +1072,9 @@ void txOSC(unsigned short int OSCNodeID)
   LLNODE* oscItem = oscObject.findByID(OSCNodeID);
   if(oscItem!=NULL)
   {
-    txPacketSize += strlen(oscItem->_controllName);
+    txPacketSize += strlen(oscItem->_controllName)+1;
     //Calculate Padding to make the string 32bit able as per osc spec https://opensoundcontrol.stanford.edu/spec-1_0.html#osc-packets
-    padding = strlen(oscItem->_controllName)*8;
+    padding = (strlen(oscItem->_controllName)+1)*8;
     padding = padding/32;
     fractpart = modf(padding , &intpart);
     if(fractpart==0.75)
@@ -1100,6 +1099,8 @@ void txOSC(unsigned short int OSCNodeID)
     //Store Control Name
     memcpy(oscBuffer, oscItem->_controllName, strlen(oscItem->_controllName));
     bufferIndex+=strlen(oscItem->_controllName);
+      oscBuffer[bufferIndex]=0;
+      bufferIndex++;
     //Add padding to make it 32bitable
     if(padding!=0)
     {
@@ -1119,16 +1120,14 @@ void txOSC(unsigned short int OSCNodeID)
     
     //tx to touch osc
     dataSent = udp.writeTo((uint8_t *)oscBuffer, txPacketSize, touchOSCAddress, oscTXPort);
-    
-	  /*
-	  Serial.printf("\t\tSent %d bytes.", dataSent);
+    /*
+    Serial.printf("\t\tSent %d bytes.", dataSent);
     for(bufferIndex=0; bufferIndex<txPacketSize; bufferIndex++)
     {
       Serial.printf("\r\n%d\t[%d]\t[%c]", bufferIndex, oscBuffer[bufferIndex], oscBuffer[bufferIndex]);
     }
-	  */
+    */	  
   }
-
 }
 
 void sendMidi(unsigned short int oscNodeID)
@@ -1151,15 +1150,13 @@ void sendMidi(unsigned short int oscNodeID)
         midiCommand[1] = tempMIDINode->_controllID;               //controll id
         midiCommand[2] = (byte)(tempOscNode->_currentValue*128);  //value
        
-				swSer.write(midiCommand, 3);
+        Serial2.write(midiCommand, 3);
 
 				break;
 			}
 		}
 	}
-	
-
-	
+		
 	//TX MIDI data of the OSC node
 }
 
