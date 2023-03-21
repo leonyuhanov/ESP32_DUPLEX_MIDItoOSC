@@ -98,17 +98,18 @@ void setup()
     {
       packetSize = packet.length();
       memcpy(oscObject.packetBuffer, packet.data(), packet.length());
+      /*
       for(iCnt=0; iCnt<packet.length(); iCnt++)
       {
         Serial.printf("\r\n%d\t[%d]\t[%c]", iCnt, oscObject.packetBuffer[iCnt], oscObject.packetBuffer[iCnt]);
       }
+      */
       oscObject.currentPacketSize = packet.length();
       oscObject.toggleState();
       oscObject.parseOSCPacket();
       sendMidi(oscObject.currentControllID);
       if(WSConnectState==1)
       {
-        //ws.textAll(oscObject.packetBuffer);
         txLastOSCMessageToUI(oscObject.packetBuffer, packet.length());
       }
     });
@@ -440,6 +441,7 @@ short int findNeedleCount(char* haystack, unsigned short int hayStackLength, cha
 void loadConfiguration()
 {
   File configFileObject;
+  byte noConfig=0;
 
   //Load OSC configuration
   configFileObject = SPIFFS.open(oscConfigFilePath, "r");
@@ -452,6 +454,7 @@ void loadConfiguration()
     Serial.printf("\r\n\tLoading %d bytes of OSC Configuration from file...", configFileObject.size());
     loadOSCConfig(configFileObject);
     Serial.printf("\tLoaded %d OSC items!", oscObject.totalNodes);
+    noConfig++;
   }
   configFileObject.close();
   
@@ -466,8 +469,15 @@ void loadConfiguration()
     Serial.printf("\r\n\tLoading %d bytes of MIDI COnfiguration from file...", configFileObject.size());
     loadMIDIConfig(configFileObject);
     Serial.printf("\tLoaded %d MIDI items!", midiMap.totalNodes);
+    noConfig++;
   }
   configFileObject.close();
+  if(noConfig==0)
+  {
+    //If config is empty laod defaults in memory but NOT into file system
+    Serial.printf("\r\n\tNo configuration in SPIFFs, loading defaults.");
+    loadDefaults();
+  }
 }
 
 void loadOSCConfig(File configFileObject)
@@ -1054,23 +1064,51 @@ void processProgramChange(char midiChanel)
 
 void txOSC(unsigned short int OSCNodeID)
 {
-  unsigned short int txPacketSize = 9, bufferIndex=0, dataSent=0;
+  unsigned short int txPacketSize = 8, bufferIndex=0, dataSent=0;
+  double fractpart, intpart, padding=0;
   char* oscBuffer;
-  char oscBufferPadding[5] = {0,44,102,0,0};
+  char oscBufferPadding[4] = {44,102,0,0}, padBuffer[3] = {0,0,0};
   unsigned char* floatCharPointer;
   
   LLNODE* oscItem = oscObject.findByID(OSCNodeID);
   if(oscItem!=NULL)
   {
-    //Serial.printf("\r\n\tSending [");
-    //Serial.print(oscItem->_controllName);
-    //Serial.printf("] Value [%f]", oscItem->_currentValue);
     txPacketSize += strlen(oscItem->_controllName);
+    //Calculate Padding to make the string 32bit able as per osc spec https://opensoundcontrol.stanford.edu/spec-1_0.html#osc-packets
+    padding = strlen(oscItem->_controllName)*8;
+    padding = padding/32;
+    fractpart = modf(padding , &intpart);
+    if(fractpart==0.75)
+    {
+      padding=1;
+    }
+    else if(fractpart==0.5)
+    {
+      padding=2;
+    }
+    else if(fractpart==0.25)
+    {
+      padding=3;
+    }
+    else
+    {
+      padding=0;
+    }
+    txPacketSize+=padding;
     oscBuffer = new char[txPacketSize];
+
+    //Store Control Name
     memcpy(oscBuffer, oscItem->_controllName, strlen(oscItem->_controllName));
     bufferIndex+=strlen(oscItem->_controllName);
-    memcpy(oscBuffer+bufferIndex, oscBufferPadding, 5);
-    bufferIndex+=5;
+    //Add padding to make it 32bitable
+    if(padding!=0)
+    {
+      memcpy(oscBuffer+bufferIndex, padBuffer, padding);
+      bufferIndex+=padding;
+    }
+    //Add middle of packet
+    memcpy(oscBuffer+bufferIndex, oscBufferPadding, 4);
+    bufferIndex+=4;
     //Grab 4 bytes of te value float
     floatCharPointer = (unsigned char*)&oscItem->_currentValue;
     
@@ -1081,13 +1119,14 @@ void txOSC(unsigned short int OSCNodeID)
     
     //tx to touch osc
     dataSent = udp.writeTo((uint8_t *)oscBuffer, txPacketSize, touchOSCAddress, oscTXPort);
-    /*
-	Serial.printf("\t\tSent %d bytes.", dataSent);
+    
+	  /*
+	  Serial.printf("\t\tSent %d bytes.", dataSent);
     for(bufferIndex=0; bufferIndex<txPacketSize; bufferIndex++)
     {
       Serial.printf("\r\n%d\t[%d]\t[%c]", bufferIndex, oscBuffer[bufferIndex], oscBuffer[bufferIndex]);
     }
-	*/
+	  */
   }
 
 }
@@ -1113,10 +1152,7 @@ void sendMidi(unsigned short int oscNodeID)
         midiCommand[2] = (byte)(tempOscNode->_currentValue*128);  //value
        
 				swSer.write(midiCommand, 3);
-   
-				//Serial.printf("\r\n\t\tSending MIDI to \t[");
-        //Serial.print(tempOscNode->_controllName);
-        //Serial.printf("]\tValues[%d|%d|%d]", midiCommand[0],midiCommand[1],midiCommand[2]);
+
 				break;
 			}
 		}
