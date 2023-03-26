@@ -122,6 +122,21 @@ void setup()
 
 void loadDefaults()
 {
+  LLNODE* oscObjectNode;
+  MIDINODE* midiObjectNode;
+  unsigned short int id=0;
+
+  //clear all osc objects
+  for(id=0; id<oscObject.totalNodes; id++)
+  {
+    oscObject.deleteNode(id);
+  }
+  //clear all midi objects
+  for(id=0; id<midiMap.totalNodes; id++)
+  {
+    midiMap.deleteNode(id);
+  }
+  //Set up default MIDI entries
   midiMap.addNode("PITCH_VCO2",1,35,0,0,0);
   midiMap.addNode("SHAPE_VCO1",1,36,0,0,1);
   midiMap.addNode("SHAPE_VCO2",1,37,0,0,2);
@@ -147,6 +162,7 @@ void loadDefaults()
   midiMap.addNode("AUDIO_OFF",1,120,0,0,22);
   midiMap.addNode("RESET_CONTROL",1,121,0,0,23);
 
+  //Set up default osc entries
   oscObject.addControll("/PITCH_VCO2",1,'f');
   oscObject.addControll("/SHAPE_VCO1",1,'f');
   oscObject.addControll("/SHAPE_VCO2",1,'f');
@@ -280,6 +296,12 @@ void onWsEvent(AsyncWebSocket * server, AsyncWebSocketClient * client, AwsEventT
       Serial.printf("\r\n\tSaving configuration to SPIFFS");
       saveOSCConfig();
       saveMIDIConfig();
+    }
+    else if(tempCommandString[0]=='C')
+    {
+      //Clear internal config and reload the defaults
+      Serial.printf("\r\n\tLoading Default Korg Monologue settings");
+      loadDefaults();
     }
   }
 }
@@ -474,8 +496,8 @@ void loadConfiguration()
   if(noConfig==0)
   {
     //If config is empty laod defaults in memory but NOT into file system
-    Serial.printf("\r\n\tNo configuration in SPIFFs, loading defaults.");
-    loadDefaults();
+    Serial.printf("\r\n\tNo configuration in SPIFFs.");
+    //loadDefaults();
   }
 }
 
@@ -715,6 +737,18 @@ void txLastOSCMessageToUI(char* packetBuffer, unsigned short int packetLength)
   ws.binary(webUIClientID, oscObjectsBuffer, bufferSize); 
 }
 
+void txLastMIDIMessageToUI(char midiCommand, char controllID, char value)
+{
+  unsigned short int bufferSize = 3;
+  unsigned char* midiObjectsBuffer = new unsigned char[bufferSize];
+
+  midiObjectsBuffer[0] = midiCommand;
+  midiObjectsBuffer[1] = controllID;
+  midiObjectsBuffer[2] = value;
+
+  ws.binary(webUIClientID, midiObjectsBuffer, bufferSize); 
+}
+
 void sendOSCConfig(AsyncWebSocketClient * client)
 {
   unsigned short int bufferSize=0, oscNodeCounter=0, currentIndex=0;
@@ -935,26 +969,26 @@ void loop()
       switch(dataIn)
     	{
     		case	128 ... 143:		//CH1-16 Note OFF ( dataIn-128+1 )
-    									//Serial.printf("\tProcess NOTE OFF");
+    									//Serial.printf("\r\n\tProcess NOTE OFF");
     									//processNote(dataIn-128+1, 0);
     									break;
     		case	144 ... 159:		//CH1-16 Note ON ( dataIn-144+1 )
-                      //Serial.printf("\tProcess NOTE ON");
+                      //Serial.printf("\r\n\tProcess NOTE ON");
     									//processNote(dataIn-144+1, 1);
     									break;
     		case	176 ... 191:		//CH1-16 Controll change ( dataIn-176+1 )
-                      //Serial.printf("\tProcess CONTROLL CHANGE");
+                      //Serial.printf("\r\n\tProcess CONTROLL CHANGE");
     									processControllChange(dataIn-176+1);
     									break;
     		case	192 ... 207:		//CH1-16 Program change ( dataIn-192+1 )
-                      //Serial.printf("\tProcess Program Change");
-    									processProgramChange(dataIn-192+1);
+                      //Serial.printf("\r\n\tProcess Program Change");
+    									//processProgramChange(dataIn-192+1);
     									break;			
   	  }
     }
     else
     {
-      //Serial.printf("\r\n\t\t\t\t\tREJECTED[%d]", dataIn);
+      Serial.printf("\r\n\t\t\t\t\tREJECTED[%d]", dataIn);
     }
   }
   yield();
@@ -1015,7 +1049,7 @@ void processControllChange(char midiChanel)
       readyToWrite++;
     }
   }
-  //Serial.printf("\r\n\tInside ProcessChange\tmidiChanel[%d]\tReceived[%d|%d|%d]", midiChanel, dataIn ,midiSerialData[1],midiSerialData[2]);
+  Serial.printf("\r\n\tInside ProcessChange\tmidiChanel[%d]\tReceived[%d|%d|%d]", midiChanel, dataIn ,midiSerialData[1],midiSerialData[2]);
   //locate MIDI object in system
   if(midiMap.findNode(midiSerialData[0], midiSerialData[1])!=NULL)
   {
@@ -1030,6 +1064,15 @@ void processControllChange(char midiChanel)
       oscItem->_currentValue = ((float)midiSerialData[2])/128;
       txOSC(midiMap.findNode(midiSerialData[0], midiSerialData[1])->_mapsToOSCnodeID);
     }
+    else
+    {
+      Serial.printf("\r\n\t\tNON maped Control!");
+    }
+  }
+  //Transmit last MIDI message to UI
+  if(WSConnectState==1)
+  {
+    txLastMIDIMessageToUI(midiChanel, midiSerialData[1], midiSerialData[2]);
   }
 }
 

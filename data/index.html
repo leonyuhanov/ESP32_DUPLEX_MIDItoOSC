@@ -44,6 +44,20 @@ i{
 {
 	-webkit-appearance: slider-horizontal;
 }
+customDivLeft{
+	border: 1;
+	border-color: white;
+	padding: 0px;
+	text-align: left;
+	font-size: 20px
+}
+customDivRight{
+	border: 1;
+	border-color: white;
+	padding: 0px;
+	text-align: right;
+	font-size: 20px
+}
 </style>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 </head>
@@ -51,7 +65,16 @@ i{
 <body onload="init()">
 <h1> MIDI to OSC Mapper </h1>
 
-<div id="lastOSC"></div>
+<table id="midiControlsTable">
+<tbody>
+<tr>
+<td><div id="lastOSC">Last OSC Message</div></td>
+<td><div id="lastMIDI" onClick="">Last MIDI Message</div></td>
+</tr>
+</tbody>
+</table>
+
+<hr>
 
 <table id="midiControlsTable">
 <tbody>
@@ -526,11 +549,58 @@ function initWebSockets()
 		}
 		else if(configSignals==4)
 		{
-			//Update last OSC message seen from controler
-			lastOSCMessage(event.data);
+			
+			processLastMesageData(event.data);
+			/*
+			console.log("\tData length is "+event.data.length);
+			if(event.data.arrayBuffer.length==3)
+			{
+				
+			}
+			else
+			{
+				//Update last OSC message seen from controler
+				lastOSCMessage(event.data);
+			}
+			*/
 		}
 		
 	};
+}
+
+async function processLastMesageData(data)
+{
+	var rData = new Int8Array(await data.arrayBuffer());
+	if(rData.length==3)
+	{
+		//Update last MIDI message seen from controler
+		lastMIDIessage(data);
+	}
+	else
+	{
+		//Update last OSC message seen from controler
+		lastOSCMessage(data);
+	}
+}
+
+async function lastMIDIessage(data)
+{
+	var midiReturnData = new Int8Array(await data.arrayBuffer());
+	var lastMidiMessageObject = document.getElementById("lastMIDI");
+	var element;
+	
+	//delete old item if there was one
+	element = document.getElementById("lastDynamicMidi");
+	if(element!=null)
+	{
+		element.parentNode.removeChild(element);
+	}
+	//add last detected midi signal
+	element = document.createElement('div');
+	element.setAttribute('id', 'lastDynamicMidi');
+	element.innerHTML = "Click to Add -> Last MIDI Message["+midiReturnData[0]+"]\tID["+midiReturnData[1]+"]\tValue["+midiReturnData[2]+"]";
+	element.setAttribute('onClick', "addMIDIItem('newMidi',"+midiReturnData[1]+","+midiReturnData[2]+",0,0,-1)");
+	lastMidiMessageObject.appendChild(element);							  
 }
 
 async function lastOSCMessage(data)
@@ -541,6 +611,8 @@ async function lastOSCMessage(data)
 	var itemValue=0;
 	var fieldTerminator = 44;
 	var iCnt=0, fieldIndex=0;
+	var lastOSCMessageObject = document.getElementById("lastOSC");
+	var element;
 	
 	//document.getElementById("lastOSC").innerHTML = await data.arrayBuffer();
 	oscReturnData = new Int8Array(await data.arrayBuffer());
@@ -557,10 +629,20 @@ async function lastOSCMessage(data)
 	//Grab the osc value
 	itemValue = new Float32Array(oscReturnData.buffer.slice(fieldIndex,fieldIndex+4));
 	itemValue = Number(itemValue).toFixed(2);
-	document.getElementById("lastOSC").innerHTML = "Last OSC Message FROM ["+
-	                                               itemName+"]\tType["+itemValueType+
-												   "]\tValue["+itemValue+"]";
 	
+	
+	//delete old item if there was one
+	element = document.getElementById("lastDynamicOSC");
+	if(element!=null)
+	{
+		element.parentNode.removeChild(element);
+	}
+	//add last detected midi signal
+	element = document.createElement('div');
+	element.setAttribute('id', 'lastDynamicOSC');
+	element.innerHTML = "Click to Add -> Last OSC Message ["+itemName+"]\tType["+itemValueType+"]\tValue["+itemValue+"]";
+	element.setAttribute('onClick', "addOSCItem('"+itemName+"',1,'"+itemValueType+"')");
+	lastOSCMessageObject.appendChild(element);	
 }
 
 async function countOSC(data)
@@ -691,6 +773,13 @@ function clearMIDIConfig()
 {
 	wsObject.send("clearmidi");
 }
+
+function loadDefaults()
+{
+	wsObject.send("C");
+	document.location.reload(true);
+}
+
 function saveConfig()
 {
 	saveOSCConfig();
