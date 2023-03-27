@@ -122,20 +122,10 @@ void setup()
 
 void loadDefaults()
 {
-  LLNODE* oscObjectNode;
-  MIDINODE* midiObjectNode;
-  unsigned short int id=0;
-
   //clear all osc objects
-  for(id=0; id<oscObject.totalNodes; id++)
-  {
-    oscObject.deleteNode(id);
-  }
+  clearOSC();
   //clear all midi objects
-  for(id=0; id<midiMap.totalNodes; id++)
-  {
-    midiMap.deleteNode(id);
-  }
+  clearMIDI();
   //Set up default MIDI entries
   midiMap.addNode("PITCH_VCO2",1,35,0,0,0);
   midiMap.addNode("SHAPE_VCO1",1,36,0,0,1);
