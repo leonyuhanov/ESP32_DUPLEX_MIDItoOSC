@@ -23,3 +23,8 @@ You will need to upload the contents of the DATA folder to the ESP32 SPIFFS usin
 Set up your WIFI network defails int he code/compile and upload. You will need to modify the IP address detais for your network and set up Touch osc acordingly
 
 Then compile and upload via the arduino ide. The serial monitor will outout the devices IP address
+
+# TouchOSC Set up
+
+* OSC RX port is mapped to UDP 5555 as "oscRXPort", this is the port that the TouchOSC App uses to TX DATA TO your ESP32
+* OSC TX port is mapped to UDP 5556 as "oscTXPort", this is the port that your ESP32 uses to TX data to TouchOSC
